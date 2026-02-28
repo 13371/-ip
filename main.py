@@ -10,6 +10,7 @@ DEVELOPER = "砚白"
 import tkinter as tk
 from tkinter import messagebox
 import threading
+import queue
 import sys
 import os
 
@@ -87,46 +88,42 @@ class TrayApp:
         self.root.title("砚白配置IP")
         self.tray_icon = None
         self.tray_thread = None
+        self._apply_result_queue = queue.Queue()
 
     def _schedule(self, fn):
         self.root.after(0, fn)
 
-    def _apply_template_by_id(self, template_id):
-        def do():
-            templates = [t for t in config.get_templates() if (t.get("id") or "") == template_id]
-            if not templates:
-                messagebox.showerror("错误", "模板不存在")
-                return
-            ok, err = _apply_template(templates[0])
-            if ok:
-                messagebox.showinfo("成功", "已应用模板：%s" % templates[0].get("name", ""))
-            else:
-                messagebox.showerror("失败", err or "应用失败")
-        self._schedule(do)
+    def _drain_apply_result_queue(self):
+        """主线程轮询：处理托盘应用模板/切换 DHCP 的结果，避免工作线程直接调 root.after 导致弹窗不出现"""
+        try:
+            while True:
+                ok, err, name = self._apply_result_queue.get_nowait()
+                if ok:
+                    if name:
+                        messagebox.showinfo("成功", "已应用模板：%s" % name)
+                    else:
+                        messagebox.showinfo("成功", "已切换到自动 DHCP")
+                else:
+                    messagebox.showerror("失败", err or "操作失败")
+        except queue.Empty:
+            pass
+        self.root.after(300, self._drain_apply_result_queue)
 
     def _apply_template_by_data(self, template):
-        """托盘点击时在后台线程执行 netsh，避免阻塞主线程导致弹窗很久才出"""
+        """托盘点击时在后台线程执行 netsh，结果通过队列传回主线程弹窗，避免跨线程 after 失效"""
         def run_then_notify():
             ok, err = _apply_template(template)
-            def show():
-                if ok:
-                    monitor.set_monitoring_paused(False)
-                    messagebox.showinfo("成功", "已应用模板：%s" % template.get("name", ""))
-                else:
-                    messagebox.showerror("失败", err or "应用失败")
-            self._schedule(show)
+            if ok:
+                monitor.set_monitoring_paused(False)
+            self._apply_result_queue.put((ok, err, (template.get("name") or "").strip()))
         threading.Thread(target=run_then_notify, daemon=True).start()
 
     def _do_switch_dhcp(self):
         def run_then_notify():
             ok, err = _switch_dhcp()
-            def show():
-                if ok:
-                    monitor.set_monitoring_paused(True)
-                    messagebox.showinfo("成功", "已切换到自动 DHCP")
-                else:
-                    messagebox.showerror("失败", err or "切换失败")
-            self._schedule(show)
+            if ok:
+                monitor.set_monitoring_paused(True)
+            self._apply_result_queue.put((ok, err, ""))
         threading.Thread(target=run_then_notify, daemon=True).start()
 
     def _do_open_template_editor(self):
@@ -220,6 +217,7 @@ class TrayApp:
         monitor.start_monitor()
         self.tray_thread = threading.Thread(target=self._run_tray, daemon=True)
         self.tray_thread.start()
+        self.root.after(300, self._drain_apply_result_queue)
         self.root.mainloop()
 
 

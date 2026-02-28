@@ -108,6 +108,7 @@ class TemplateEditorWindow:
             return
         templates = [t for t in config.get_templates() if (t.get("id") or "") == tid]
         if not templates:
+            messagebox.showwarning("提示", "未找到对应模板，请刷新列表后重试")
             return
         self._edit_dialog(dict(templates[0]), is_new=False)
 
@@ -137,10 +138,13 @@ class TemplateEditorWindow:
 
         def save():
             new_data = {k: e.get().strip() for k, e in entries.items()}
-            new_data["id"] = data["id"]
+            new_data["id"] = data.get("id") or str(uuid.uuid4())
             new_data["name"] = new_data["name"] or "未命名"
             if new_data.get("ip") and not _is_valid_ipv4(new_data["ip"]):
                 messagebox.showerror("错误", "请输入有效的 IPv4 地址（如 192.168.0.1）")
+                return
+            if new_data.get("mask") and not _is_valid_ipv4(new_data["mask"]):
+                messagebox.showerror("错误", "请输入有效的子网掩码")
                 return
             if new_data.get("gateway") and not _is_valid_ipv4(new_data["gateway"]):
                 messagebox.showerror("错误", "请输入有效的网关地址")
@@ -156,7 +160,7 @@ class TemplateEditorWindow:
                 templates.append(new_data)
                 config.save_templates(templates)
             else:
-                data_id = data.get("id")
+                data_id = new_data.get("id")
                 templates = [new_data if (t.get("id") == data_id) else t for t in config.get_templates()]
                 config.save_templates(templates)
             self._load_list()
@@ -174,7 +178,11 @@ class TemplateEditorWindow:
             return
         if not messagebox.askyesno("确认", "确定要删除该模板吗？"):
             return
-        templates = [t for t in config.get_templates() if (t.get("id") or "") != tid]
+        all_templates = config.get_templates()
+        templates = [t for t in all_templates if (t.get("id") or "") != tid]
+        if len(templates) == len(all_templates):
+            messagebox.showwarning("提示", "未找到对应模板，请刷新列表后重试")
+            return
         config.save_templates(templates)
         self._load_list()
 
@@ -185,6 +193,7 @@ class TemplateEditorWindow:
             return
         templates = [t for t in config.get_templates() if (t.get("id") or "") == tid]
         if not templates:
+            messagebox.showwarning("提示", "未找到对应模板，请刷新列表后重试")
             return
         t = templates[0]
         iface = network_manager.get_connected_interface()
@@ -193,11 +202,11 @@ class TemplateEditorWindow:
             return
         ok, err = network_manager.set_static_ip(
             iface,
-            t.get("ip", ""),
-            t.get("mask", "255.255.255.0"),
-            t.get("gateway", ""),
-            t.get("dns1") or None,
-            t.get("dns2") or None,
+            (t.get("ip") or "").strip(),
+            (t.get("mask") or "255.255.255.0").strip(),
+            (t.get("gateway") or "").strip(),
+            (t.get("dns1") or "").strip() or None,
+            (t.get("dns2") or "").strip() or None,
         )
         if ok:
             monitor.set_monitoring_paused(False)

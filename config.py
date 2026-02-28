@@ -3,6 +3,7 @@
 import json
 import os
 import sys
+import uuid
 
 # 使用程序所在目录；打包为 exe 时用 exe 所在目录，便于拷贝到其他电脑
 if getattr(sys, "frozen", False):
@@ -47,6 +48,15 @@ def load_config():
             return {"templates": [], "autostart": False}
         if not isinstance(data.get("templates"), list):
             data["templates"] = []
+        need_save = False
+        for t in data["templates"]:
+            if not isinstance(t, dict):
+                continue
+            if not (t.get("id") or "").strip():
+                t["id"] = str(uuid.uuid4())
+                need_save = True
+        if need_save:
+            save_config(data)
         return data
     except Exception:
         return {"templates": [], "autostart": False}
