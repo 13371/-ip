@@ -1,0 +1,21 @@
+# 打包产物与缓存
+build/
+build2/
+dist/
+dist2/
+*.spec
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+
+# 用户配置与模板（本地数据，不提交）
+.yanbai_ip_config/
+
+# 编辑器与系统
+.idea/
+.vscode/
+*.swp
+*.swo
+Thumbs.db
+.DS_Store
