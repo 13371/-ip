@@ -2,10 +2,19 @@
 """砚白配置IP - 网络配置（netsh）"""
 import subprocess
 import sys
-
+import os
 
 # netsh 超时（秒），避免卡死导致弹窗迟迟不出现
 NETSH_TIMEOUT = 15
+
+
+def _netsh_exe():
+    """使用 System32 下 netsh 完整路径，避免其他电脑 PATH 异常导致找不到命令"""
+    if sys.platform != "win32":
+        return "netsh"
+    root = os.environ.get("SystemRoot", "C:\\Windows")
+    exe = os.path.join(root, "System32", "netsh.exe")
+    return exe if os.path.isfile(exe) else "netsh"
 
 
 def _is_valid_ipv4(s):
@@ -25,7 +34,7 @@ def _is_valid_ipv4(s):
 
 
 def _run_netsh(args, check=True):
-    cmd = ["netsh"] + args
+    cmd = [_netsh_exe()] + args
     try:
         r = subprocess.run(
             cmd,
@@ -37,7 +46,10 @@ def _run_netsh(args, check=True):
             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
         )
         if check and r.returncode != 0:
-            return False, (r.stderr or r.stdout or "").strip()
+            err = (r.stderr or r.stdout or "").strip()
+            if not err or "access" in err.lower() or "denied" in err.lower() or "拒绝" in err or "权限" in err:
+                err = "需要管理员权限，请右键本程序选择「以管理员身份运行」。" if not err else err
+            return False, err
         return True, (r.stdout or "").strip()
     except subprocess.TimeoutExpired:
         return False, "执行超时（请检查是否以管理员运行）"
@@ -45,30 +57,41 @@ def _run_netsh(args, check=True):
         return False, str(e)
 
 
-def get_connected_interface():
+def get_all_interfaces():
     """
-    获取当前已连接的以太网接口名称。
-    解析 netsh interface show interface 输出，支持中文（已连接）与英文（Connected），
-    接口名可能含空格（如「网络 3」），取第 4 列起为名称。
+    获取所有网卡列表及连接状态。返回 [{"name": "以太网", "connected": True}, ...]。
+    用于「选择网卡」界面，以及优先使用用户指定的网卡。
     """
     ok, out = _run_netsh(["interface", "show", "interface"], check=False)
     if not ok:
-        return None
+        return []
+    result = []
+    skip_headers = ("admin", "state", "类型", "type", "interface", "接口", "name", "名称", "---")
     for line in out.splitlines():
-        line_lower = line.strip().lower()
-        if "已连接" in line or "connected" in line_lower:
-            parts = line.split()
-            if len(parts) >= 4:
-                # 列顺序一般为：管理状态 连接状态 类型 接口名称（名称可能含空格）
-                name = " ".join(parts[3:]).strip()
-                skip = ("admin", "state", "类型", "type", "interface", "接口")
-                if name and name.lower() not in skip:
-                    return name
-            elif len(parts) >= 1:
-                name = parts[0].strip()
-                if name and name.lower() not in ("admin", "state", "类型", "type", "interface", "已连接", "connected"):
-                    return name
-    return None
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        name = " ".join(parts[3:]).strip()
+        if not name or name.lower() in skip_headers:
+            continue
+        connected = "已连接" in line or (len(parts) > 1 and "connected" in parts[1].lower())
+        result.append({"name": name, "connected": connected})
+    return result
+
+
+def get_connected_interface(preferred=None):
+    """
+    获取要操作的网卡名称。
+    - 若用户已手动选择网卡（preferred）且该网卡存在于系统中，则始终返回该网卡，不自动更换。
+    - 若未选择或选择的网卡不存在，则返回第一个已连接的网卡。
+    """
+    interfaces = get_all_interfaces()
+    all_names = [x["name"] for x in interfaces]
+    connected = [x["name"] for x in interfaces if x["connected"]]
+    # 用户已手动选择：只要该网卡存在就始终使用，不因未连接而自动换其他网卡
+    if preferred and preferred in all_names:
+        return preferred
+    return connected[0] if connected else None
 
 
 def set_static_ip(interface_name, ip, mask, gateway, dns1=None, dns2=None):

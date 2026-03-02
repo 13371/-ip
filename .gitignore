@@ -3,6 +3,7 @@ build/
 build2/
 dist/
 dist2/
+pybuild_out/
 *.spec
 __pycache__/
 *.py[cod]

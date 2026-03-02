@@ -196,7 +196,7 @@ class TemplateEditorWindow:
             messagebox.showwarning("提示", "未找到对应模板，请刷新列表后重试")
             return
         t = templates[0]
-        iface = network_manager.get_connected_interface()
+        iface = network_manager.get_connected_interface(config.get_preferred_interface())
         if not iface:
             messagebox.showerror("错误", "未找到已连接的以太网接口")
             return

@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import ttk
 import time
 
+import config
 import monitor
 import network_manager
 
@@ -49,13 +50,21 @@ def open_network_status(parent):
     add_row("已触发自动切 DHCP 次数", "trigger_count", "%s 次")
     add_row("上次检测时间", "last_check_time", "%s")
 
-    # 当前网卡（只读，从 network_manager 取一次）
-    iface = network_manager.get_connected_interface()
-    iface_var = tk.StringVar(value=iface or "未检测到")
+    # 已选择的网卡（用户手动选择的，不会自动更换）
+    preferred = config.get_preferred_interface()
+    preferred_var = tk.StringVar(value=preferred if preferred else "自动（第一个已连接）")
     row_f = ttk.Frame(f)
     row_f.pack(fill=tk.X, pady=2)
-    ttk.Label(row_f, text="当前监测网卡：", width=18, anchor=tk.W).pack(side=tk.LEFT)
-    ttk.Label(row_f, textvariable=iface_var, anchor=tk.W).pack(side=tk.LEFT, fill=tk.X, expand=True)
+    ttk.Label(row_f, text="已选网卡：", width=18, anchor=tk.W).pack(side=tk.LEFT)
+    ttk.Label(row_f, textvariable=preferred_var, anchor=tk.W).pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+    # 当前实际使用的网卡（与已选一致，除非未选时取第一个已连接）
+    iface = network_manager.get_connected_interface(config.get_preferred_interface())
+    iface_var = tk.StringVar(value=iface or "未检测到")
+    row_f2 = ttk.Frame(f)
+    row_f2.pack(fill=tk.X, pady=2)
+    ttk.Label(row_f2, text="当前使用网卡：", width=18, anchor=tk.W).pack(side=tk.LEFT)
+    ttk.Label(row_f2, textvariable=iface_var, anchor=tk.W).pack(side=tk.LEFT, fill=tk.X, expand=True)
 
     def refresh():
         st = monitor.get_status()
@@ -81,6 +90,11 @@ def open_network_status(parent):
         vars_map["trigger_count"][0].set(str(st.get("trigger_count", 0)))
         lt = st.get("last_check_time")
         vars_map["last_check_time"][0].set(_format_time(lt))
+        # 刷新已选网卡与当前使用网卡
+        pref = config.get_preferred_interface()
+        preferred_var.set(pref if pref else "自动（第一个已连接）")
+        cur = network_manager.get_connected_interface(config.get_preferred_interface())
+        iface_var.set(cur or "未检测到")
 
     refresh()
 
